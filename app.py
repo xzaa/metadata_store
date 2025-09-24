@@ -15,7 +15,7 @@ def cli():
     pass
 
 
-@cli.command()
+@cli.command(name="compare_features")
 @click.option('--file', 'file_path', required=True, help='Excel файл с моделью фичей')
 @click.option('--output', 'out_path', default='features_report.xlsx', help='Путь для отчёта')
 def compare_features_cmd(file_path, out_path):
@@ -23,14 +23,14 @@ def compare_features_cmd(file_path, out_path):
     click.echo(f"Отчёт сохранён: {out_path}")
 
 
-@cli.command()
+@cli.command(name="update_features")
 @click.option('--file', 'file_path', required=True, help='Excel-отчёт из compare_features')
 def update_features_cmd(file_path):
     update_features_from_report(file_path)
     click.echo('Обновление завершено')
 
 
-@cli.command()
+@cli.command(name="compare_task")
 @click.option('--file', 'file_path', required=True, help='Excel файл с задачей')
 @click.option('--cm_id', required=True, help='Идентификатор канонической модели')
 @click.option('--output', 'out_path', default='task_report.xlsx', help='Путь для отчёта')

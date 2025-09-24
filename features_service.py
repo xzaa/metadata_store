@@ -20,6 +20,9 @@ def _load_features_from_db() -> pd.DataFrame:
     FROM features
     '''
     rows = fetch_all(query)
+    if not rows:
+        # создаём пустой DataFrame с нужными колонками
+        return pd.DataFrame(columns=["feature_id", "mart", "tabl", "fld", "data_type", "feature_nm_status"])
     return pd.DataFrame(rows)
 
 
@@ -72,21 +75,44 @@ def compare_features(excel_path: str, output_path: str):
 
 
 def update_features_from_report(report_path: str):
+    # orphan mappings
     df_maps = read_excel_sheet(report_path, sheet_name='orphan_mappings')
-    if df_maps is None or df_maps.empty:
-        print('Нет удаляемых маппингов в отчёте')
-        return
+    if df_maps is not None and not df_maps.empty:
+        for _, row in df_maps.iterrows():
+            old_feature = str(row.get('feature_id', '')).strip()
+            att_path = str(row.get('att_path', '')).strip()
+            new_feature = str(row.get('new_feature_id', '')).strip()
+            if new_feature:
+                query = "UPDATE cm_to_fts_maping SET feature_id = %s WHERE feature_id = %s AND att_path = %s"
+                execute(query, (new_feature, old_feature, att_path))
+            else:
+                query = "DELETE FROM cm_to_fts_maping WHERE feature_id = %s AND att_path = %s"
+                execute(query, (old_feature, att_path))
 
-    for idx, row in df_maps.iterrows():
-        old_feature = str(row.get('feature_id', '')).strip()
-        att_path = str(row.get('att_path', '')).strip()
-        new_feature = str(row.get('new_feature_id', '')).strip() if 'new_feature_id' in row else ''
+    # вставка новых фич
+    df_inserts = read_excel_sheet(report_path, sheet_name='inserts')
+    if df_inserts is not None and not df_inserts.empty:
+        for _, row in df_inserts.iterrows():
+            query = """
+            INSERT INTO features (feature_id, mart, tabl, fld, data_type, feature_nm_status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (feature_id) DO NOTHING
+            """
+            execute(query, (
+                row.get('feature_id', ''),
+                row.get('mart', ''),
+                row.get('tabl', ''),
+                row.get('fld', ''),
+                row.get('data_type', ''),
+                row.get('feature_nm_status', '')
+            ))
 
-        if new_feature:
-            query = "UPDATE cm_to_fts_maping SET feature_id = %s WHERE feature_id = %s AND att_path = %s"
-            execute(query, (new_feature, old_feature, att_path))
-        else:
-            query = "DELETE FROM cm_to_fts_maping WHERE feature_id = %s AND att_path = %s"
-            execute(query, (old_feature, att_path))
+    # удаление фич
+    df_deletes = read_excel_sheet(report_path, sheet_name='deletes')
+    if df_deletes is not None and not df_deletes.empty:
+        for _, row in df_deletes.iterrows():
+            query = "DELETE FROM features WHERE feature_id = %s"
+            execute(query, (row.get('feature_id', ''),))
 
-    print('Обновление маппингов завершено')
+    print('Обновление маппингов и features завершено')
+
