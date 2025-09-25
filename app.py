@@ -5,10 +5,12 @@
   python app.py update_features --file report.xlsx
   python app.py compare_task --file task.xlsx --cm_id CV --output task_report.xlsx
   python app.py update_task --file task_report.xlsx --cm_id CV
+  python app.py compare_task_mappings --file task.xlsx --output mapping_report.xlsx
+  python app.py update_task_mappings --file mapping_report.xlsx
 """
 import click
 from features_service import compare_features, update_features_from_report
-from tasks_service import compare_task_attributes, update_task
+from tasks_service import compare_task_attributes, update_task, compare_task_mappings, update_task_mappings
 
 
 @click.group()
@@ -49,7 +51,18 @@ def update_task_cmd(file_path, cm_id):
     update_task(file_path, cm_id)
     click.echo("Обновление задачи завершено")
 
+@cli.command(name="compare_task_mappings")
+@click.option('--file', 'file_path', required=True, help='Excel файл задачи')
+@click.option('--output', 'out_path', default='mapping_report.xlsx', help='Отчёт')
+def compare_task_mappings_cmd(file_path, out_path):
+    compare_task_mappings(file_path, out_path)
+    click.echo("Сравнение маппингов завершено")
 
+@cli.command(name="update_task_mappings")
+@click.option('--file', 'file_path', required=True, help='Отчёт compare_task_mappings')
+def update_task_mappings_cmd(file_path):
+    update_task_mappings(file_path)
+    click.echo("Обновление маппингов завершено")
 
 if __name__ == '__main__':
     cli()

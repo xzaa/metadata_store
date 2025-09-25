@@ -126,6 +126,19 @@ def update_task(report_path: str, cm_id: str):
 
         # 3. Создаём связь задача ↔ атрибут (для всех статусов)
         if att_path:
+            # проверяем, что атрибут существует в cm_atts
+            cm_check = fetch_all(
+                "SELECT 1 FROM cm_atts WHERE att_path = %s",
+                (att_path,)
+            )
+            if not cm_check:
+                if status == "не найден":
+                    # мы уже должны были вставить атрибут выше
+                    pass
+                else:
+                    print(f"⚠️ Пропущена связь: task={task_id}, att_path={att_path} (нет в cm_atts)")
+                    continue
+
             rows = fetch_all(
                 "SELECT 1 FROM task_attributes WHERE task_id = %s AND att_path = %s",
                 (task_id, att_path)
@@ -136,3 +149,114 @@ def update_task(report_path: str, cm_id: str):
                     (task_id, att_path)
                 )
                 print(f"Создана связь task={task_id} ↔ att_path={att_path}")
+
+
+def compare_task_mappings(excel_path: str, output_path: str):
+    """
+    Сравнение Excel-файла задачи с таблицей cm_to_fts_maping.
+    Проверка:
+      - feature_id существует в features
+      - att_path существует в cm_atts
+      - маппинг существует в cm_to_fts_maping
+    """
+    df = read_excel_sheet(excel_path)
+
+    col_map = {
+        "Витрина ПКАП": "mart",
+        "Таблица ПКАП": "tabl",
+        "Атрибут": "fld",
+        "Наименование поля на входе в стратегию": "att_path",
+    }
+    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+
+    for col in ["mart", "tabl", "fld", "att_path"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["feature_id"] = (
+        df["mart"].astype(str).str.strip()
+        + "."
+        + df["tabl"].astype(str).str.strip()
+        + "."
+        + df["fld"].astype(str).str.strip()
+    )
+
+    # загружаем данные из БД
+    db_map = {r["feature_id"]: r["att_path"] for r in fetch_all("SELECT feature_id, att_path FROM cm_to_fts_maping")}
+    feature_set = {r["feature_id"] for r in fetch_all("SELECT feature_id FROM features")}
+    att_path_set = {r["att_path"] for r in fetch_all("SELECT att_path FROM cm_atts")}
+
+    report_rows = []
+    for _, r in df.iterrows():
+        feature_id = str(r.get("feature_id", "")).strip()
+        att_path = str(r.get("att_path", "")).strip()
+        if not feature_id or feature_id == "..":
+            continue
+
+        if feature_id not in feature_set:
+            status = "фича отсутствует"
+            path_diff = ""
+        elif att_path not in att_path_set:
+            status = "атрибут отсутствует"
+            path_diff = ""
+        elif feature_id in db_map:
+            status = "найден"
+            db_att_path = db_map[feature_id]
+            path_diff = "" if db_att_path == att_path else db_att_path
+        else:
+            status = "не найден"
+            path_diff = ""
+
+        report_rows.append({
+            "feature_id": feature_id,
+            "att_path": att_path,
+            "mart": r.get("mart", ""),
+            "tabl": r.get("tabl", ""),
+            "fld": r.get("fld", ""),
+            "status": status,
+            "path_diff": path_diff,
+        })
+
+    report_df = pd.DataFrame(report_rows)
+    write_excel_report(output_path, {"mapping_compare": report_df})
+    print(f"Отчёт по маппингам сохранён: {output_path}")
+
+
+def update_task_mappings(report_path: str):
+    """
+    Обновление данных в cm_to_fts_maping по отчёту compare_task_mappings.
+    Маппинги со статусом 'фича отсутствует' или 'атрибут отсутствует' пропускаются.
+    """
+    df = read_excel_sheet(report_path, sheet_name="mapping_compare")
+
+    if df.empty:
+        print("Отчёт пустой")
+        return
+
+    for _, r in df.iterrows():
+        feature_id = str(r.get("feature_id", "")).strip()
+        att_path = str(r.get("att_path", "")).strip()
+        status = str(r.get("status", "")).strip()
+        path_diff = str(r.get("path_diff", "")).strip()
+
+        if not feature_id or not att_path:
+            continue
+
+        if status in ["фича отсутствует", "атрибут отсутствует"]:
+            print(f"⚠️ Пропущен маппинг: {feature_id} ↔ {att_path} ({status})")
+            continue
+
+        if status == "не найден":
+            execute(
+                "INSERT INTO cm_to_fts_maping (feature_id, att_path) VALUES (%s, %s)",
+                (feature_id, att_path),
+            )
+            print(f"Добавлен маппинг: {feature_id} ↔ {att_path}")
+
+        elif status == "найден" and path_diff:
+            execute(
+                "UPDATE cm_to_fts_maping SET att_path = %s WHERE feature_id = %s",
+                (att_path, feature_id),
+            )
+            print(f"Обновлён маппинг: {feature_id} → {att_path}")
+
