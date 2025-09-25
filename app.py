@@ -3,11 +3,12 @@
 Примеры:
   python app.py compare_features --file new_model.xlsx --output report.xlsx
   python app.py update_features --file report.xlsx
-  python app.py compare_task --file task.xlsx --cm_id CM001 --output task_report.xlsx
+  python app.py compare_task --file task.xlsx --cm_id CV --output task_report.xlsx
+  python app.py update_task --file task_report.xlsx --cm_id CV
 """
 import click
 from features_service import compare_features, update_features_from_report
-from tasks_service import compare_task_attributes
+from tasks_service import compare_task_attributes, update_task
 
 
 @click.group()
@@ -37,6 +38,17 @@ def update_features_cmd(file_path):
 def compare_task_cmd(file_path, cm_id, out_path):
     compare_task_attributes(file_path, cm_id, out_path)
     click.echo(f"Отчёт по задаче сохранён: {out_path}")
+
+
+
+
+@cli.command(name="update_task")
+@click.option('--file', 'file_path', required=True, help='Excel отчёт по задаче (из compare_task)')
+@click.option('--cm_id', required=True, help='Идентификатор канонической модели')
+def update_task_cmd(file_path, cm_id):
+    update_task(file_path, cm_id)
+    click.echo("Обновление задачи завершено")
+
 
 
 if __name__ == '__main__':
